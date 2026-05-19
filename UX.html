@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UX Insight Engine: Mechanism Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f4f6f8;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .sugoroku-container::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #ffffff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Editable Elements Styling */
+        .editable {
+            transition: all 0.2s ease;
+            border: 1px dashed transparent;
+            cursor: text;
+            position: relative;
+        }
+
+        .editable:hover {
+            background-color: rgba(59, 130, 246, 0.05);
+            border-color: #bfdbfe;
+            border-radius: 4px;
+        }
+
+        .editable:focus {
+            background-color: #ffffff;
+            border-color: #3b82f6;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            border-radius: 4px;
+            padding: 2px 4px;
+            margin: -2px -4px;
+            z-index: 10;
+        }
+
+        .editable::after {
+            content: '\270E';
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            font-size: 12px;
+            color: #3b82f6;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .editable:hover::after {
+            opacity: 0.5;
+        }
+
+        .editable:focus::after {
+            opacity: 0;
+        }
+
+        /* Flow GUI Styles */
+        .flow-card-target {
+            box-shadow: 0 0 0 2px #3b82f6, 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+            background: linear-gradient(to bottom, #ffffff, #eff6ff);
+        }
+
+
+
+        /* Sidebar Toggle Animation */
+        #left-sidebar {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar-collapsed {
+            width: 64px !important;
+        }
+
+        .sidebar-collapsed .sidebar-text,
+        .sidebar-collapsed .sidebar-header-text,
+        .sidebar-collapsed #sidebar-stepper span {
+            display: none !important;
+        }
+
+        .sidebar-collapsed #sidebar-stepper > div {
+            padding-left: 0 !important;
+            justify-content: center;
+        }
+
+        .sidebar-collapsed #sidebar-stepper .absolute.left-0 {
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+        }
+
+        .sidebar-collapsed .logo-area {
+            padding: 1.5rem 0.5rem !important;
+            justify-content: center;
+        }
+        
+        .sidebar-collapsed .settings-area label span,
+        .sidebar-collapsed .settings-area button span,
+        .sidebar-collapsed .reset-area button span {
+            display: none !important;
+        }
+        
+        .sidebar-collapsed .settings-area label {
+            justify-content: center;
+        }
+
+        .sidebar-collapsed + main .step-pane {
+            max-width: 95% !important;
+            transition: max-width 0.3s ease;
+        }
+
+        #res-flow-wrapper {
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            padding-bottom: 2rem !important;
+            padding-top: 1rem !important;
+            gap: 0 !important;
+        }
+
+        #res-flow-wrapper .flow-card-container {
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+
+<body class="flex h-screen overflow-hidden text-slate-800 antialiased bg-[#f4f6f8]">
+
+    <!-- Left Sidebar -->
+    <aside id="left-sidebar"
+        class="w-[260px] bg-white border-r border-slate-200 flex flex-col shrink-0 z-30 shadow-[2px_0_10px_rgba(0,0,0,0.02)] relative no-print">
+
+        <!-- Sidebar Toggle -->
+        <button onclick="toggleSidebar()" 
+            class="absolute -right-3 top-20 bg-white border border-slate-200 rounded-full p-1 text-slate-400 hover:text-blue-500 hover:border-blue-200 shadow-sm z-50 transition-all">
+            <i id="sidebar-toggle-icon" data-lucide="chevron-left" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Header Logo Area -->
+        <div class="p-6 border-b border-slate-100 flex flex-col gap-2 logo-area relative">
+            <div class="flex items-center gap-2">
+                <div class="text-blue-500 flex-shrink-0">
+                    <i data-lucide="brain-circuit" class="w-6 h-6"></i>
+                </div>
+                <h1 class="font-extrabold text-slate-800 tracking-wider text-base uppercase sidebar-header-text">UX Insight</h1>
+            </div>
+        </div>
+
+        <!-- Sidebar Content (Stepper/Tabs) -->
+        <div class="pt-8 pb-4 px-0 flex-1 overflow-y-auto relative">
+            <!-- Connecting Line (Behind badges) -->
+            <div class="absolute left-[31px] top-12 bottom-12 w-[1px] bg-slate-200 z-0"></div>
+
+            <div id="sidebar-stepper" class="space-y-4 px-4">
+                <!-- JS dynamically injects nav items here -->
+            </div>
+        </div>
+
+        <!-- Settings Area -->
+        <div class="px-5 pb-3 pt-5 border-t border-slate-200 bg-slate-50/50 settings-area">
+            <div class="mb-2 flex items-center justify-between">
+                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5"><i
+                        data-lucide="key" class="w-3.5 h-3.5 flex-shrink-0"></i> <span class="sidebar-text">API Key</span></label>
+                <span id="api-status-indicator" class="w-2 h-2 rounded-full bg-slate-300 shadow-sm flex-shrink-0"></span>
+            </div>
+            <input type="password" id="api-key-input" placeholder="Key..."
+                class="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 outline-none mb-2 placeholder:text-slate-300 shadow-sm no-print-collapsed">
+            
+            <div class="mb-3">
+                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5 mb-1.5">
+                    <i data-lucide="cpu" class="w-3.5 h-3.5 flex-shrink-0"></i> <span class="sidebar-text">AI Model Selection</span>
+                </label>
+                <select id="model-select" onchange="updateSelectedModel()"
+                    class="w-full text-[10px] p-2.5 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 outline-none shadow-sm text-slate-600 transition-all no-print-collapsed">
+                    <option value="">APIキー入力後に取得...</option>
+                </select>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <button onclick="saveApiKey()"
+                    class="w-full bg-slate-800 text-white text-[10px] font-bold py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-sm flex items-center justify-center gap-1" title="設定を保存">
+                    <i data-lucide="save" class="w-3 h-3"></i> <span class="sidebar-text">設定を保存</span>
+                </button>
+                <button onclick="testApiConnection()"
+                    class="w-full bg-white text-blue-600 border border-blue-200 text-[10px] font-bold py-2 rounded-lg hover:bg-blue-50 transition-colors shadow-sm flex items-center justify-center gap-1" title="接続テスト">
+                    <i data-lucide="zap" class="w-3 h-3"></i> <span class="sidebar-text">接続テスト</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Reset Area -->
+        <div class="p-5 border-t border-slate-200 bg-slate-50/50 reset-area">
+            <button onclick="loadMockData()"
+                class="w-full flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-colors shadow-sm bg-white border border-dashed border-blue-200 mb-2"
+                title="テスト用データを読み込む">
+                <i data-lucide="beaker" class="w-3.5 h-3.5"></i> <span class="sidebar-text">テスト用モックデータ</span>
+            </button>
+            <button onclick="resetApp()"
+                class="w-full flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shadow-sm bg-white border border-slate-200"
+                title="すべての入力をクリア">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> <span class="sidebar-text">最初からやり直す</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex flex-col relative min-w-0 bg-[#f4f6f8] h-full overflow-hidden">
+
+        <!-- Content Area -->
+        <div id="main-content-area" class="flex-1 overflow-y-auto p-8 md:p-12 pb-32 scroll-smooth">
+
+            <!-- === STEP 0: 到達目標（行動入力） === -->
+            <div id="step-pane-0" class="step-pane max-w-4xl mx-auto space-y-6">
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <h2 class="text-2xl font-bold text-slate-800">ターゲット行動</h2>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm relative overflow-hidden">
+                    <div class="p-6 md:p-8">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center">
+                                <i data-lucide="flag" class="w-4 h-4"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-800">行動入力 (ACTION)</h3>
+                        </div>
+                        <p class="text-sm font-medium text-slate-600 mb-6">分析したい具体的な行動を入力してください。<br><span
+                                class="text-xs text-slate-400 font-normal">例：ユーザーがこのプロダクトを通じて「どうなってほしいか」、または「どんな行動をとったか」を描きましょう。</span>
+                        </p>
+
+                        <form id="search-form" class="relative">
+                            <textarea id="action-input" required
+                                class="w-full h-40 bg-slate-50 border border-slate-200 rounded-xl p-5 text-base text-slate-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none transition-all leading-relaxed placeholder:text-slate-300"
+                                placeholder="ここに行動を入力してください...&#10;&#10;・何を購入する？&#10;・どんな時に利用する？&#10;・例：プレミアム缶ビールを購入する"></textarea>
+                            <span
+                                class="absolute bottom-4 right-4 text-[10px] text-slate-300 font-mono uppercase tracking-widest">Action
+                                Input</span>
+                        </form>
+                    </div>
+                    <div class="bg-slate-50 border-t border-slate-100 px-6 py-4 flex items-center justify-between">
+                        <div class="flex items-start gap-2 text-xs text-slate-500">
+                            <i data-lucide="info" class="w-4 h-4 flex-shrink-0 text-blue-500"></i>
+                            <p><strong>ポイント：</strong> 具体的で日常的な行動を入力すると、後のペルソナ設定や分析結果の精度が高まります。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === STEP 1: ペルソナ設定 === -->
+            <div id="step-pane-1" class="step-pane hidden max-w-4xl mx-auto space-y-6">
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <h2 class="text-2xl font-bold text-slate-800">ペルソナ設定</h2>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="p-6 md:p-8">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                                <i data-lucide="user" class="w-4 h-4"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-800">ユーザー情報 (PERSONA)</h3>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+                                <div><label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">名前</label><input
+                                        type="text" id="p-name"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm placeholder:text-slate-300"
+                                        placeholder="例: 佐藤 健太"></div>
+                                <div><label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">職業</label><input
+                                        type="text" id="p-occupation"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm placeholder:text-slate-300"
+                                        placeholder="例: ITエンジニア"></div>
+
+                                <div class="sm:col-span-2"><label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">趣味</label><input
+                                        type="text" id="p-hobbies"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm placeholder:text-slate-300"
+                                        placeholder="例: サウナ、読書"></div>
+
+                                <div><label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">年齢</label><input
+                                        type="number" id="p-age"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm">
+                                </div>
+                                <div>
+                                    <label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">性別</label>
+                                    <div
+                                        class="flex gap-4 p-2.5 border border-slate-200 bg-slate-50 rounded-lg items-center text-sm text-slate-600 h-[42px]">
+                                        <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio"
+                                                name="p-gender" value="男性" class="text-blue-500 focus:ring-blue-500">
+                                            男性</label>
+                                        <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio"
+                                                name="p-gender" value="女性" class="text-blue-500 focus:ring-blue-500">
+                                            女性</label>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">家族構成</label>
+                                    <select id="p-family"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm text-slate-600">
+                                        <option value="">選択してください</option>
+                                        <option value="独身">独身</option>
+                                        <option value="夫婦のみ">夫婦のみ</option>
+                                        <option value="子供あり">子供あり</option>
+                                        <option value="親と同居">親と同居</option>
+                                    </select>
+                                </div>
+                                <div><label
+                                        class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">性格</label><input
+                                        type="text" id="p-personality"
+                                        class="w-full border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 p-2.5 border bg-slate-50 text-sm placeholder:text-slate-300"
+                                        placeholder="例：完璧主義など"></div>
+                            </div>
+
+                            <div class="lg:col-span-1">
+                                <div
+                                    class="bg-teal-50/30 border border-teal-100 rounded-xl p-5 flex flex-col relative overflow-hidden shadow-inner min-h-full">
+                                    <label
+                                        class="text-sm font-bold text-teal-800 mb-3 flex items-center justify-between relative z-10">
+                                        <span class="flex items-center gap-1.5"><i data-lucide="book-open"
+                                                class="w-4 h-4"></i> エピソード</span>
+                                        <i data-lucide="bot" class="w-4 h-4 text-teal-400"></i>
+                                    </label>
+                                    <textarea id="p-episode"
+                                        oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+                                        class="w-full bg-transparent border-none p-0 text-sm text-slate-700 focus:ring-0 resize-none relative z-10 leading-relaxed placeholder:text-slate-400 overflow-hidden min-h-[200px]"
+                                        placeholder="(行動を入力して右下のAI自動補完ボタンを押すか、自由に入力してください)"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === STEP 2: 詳細設定 === -->
+            <div id="step-pane-2" class="step-pane hidden max-w-4xl mx-auto space-y-6">
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <h2 class="text-2xl font-bold text-slate-800">詳細設定 <span
+                            class="text-base font-normal text-slate-400 ml-1">(任意)</span></h2>
+                </div>
+
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden p-6 md:p-8 space-y-8">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                            <i data-lucide="settings" class="w-4 h-4"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-800">前提条件 (CONTEXT)</h3>
+                    </div>
+
+                    <div
+                        class="bg-blue-50 border border-blue-100 text-blue-700 text-xs p-4 rounded-lg flex items-start gap-2">
+                        <i data-lucide="info" class="w-4 h-4 flex-shrink-0 mt-0.5"></i>
+                        <p class="leading-relaxed">
+                            分析の前提となる文脈、フロー、比較対象の代替手段を事前に指定できます。<strong>空欄のままでもAIが自動推論して分析を行います。</strong></p>
+                    </div>
+
+                    <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                        <label class="block text-sm font-bold text-slate-800 mb-1 flex items-center gap-2">
+                            <i data-lucide="flag" class="w-4 h-4 text-blue-500"></i> 行動の最終目的 (Final Goal)
+                        </label>
+                        <p class="text-[11px] text-slate-500 mb-3">ユーザーが最終的に達成したい真の目的・ゴール状態。</p>
+                        <input type="text" id="manual-context"
+                            class="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm placeholder:text-slate-300"
+                            placeholder="例：明日への英気を養うため">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">想定する行動フロー</label>
+                            <textarea id="manual-flow"
+                                class="w-full h-32 border border-slate-200 rounded-lg p-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none bg-slate-50 placeholder:text-slate-300"
+                                placeholder="例：&#10;1. 仕事を終える&#10;2. オンオフを切り替える&#10;3. リラックスする"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-1">想定される代替手段</label>
+                            <p class="text-[10px] text-slate-400 mb-1">カンマ( , )区切り</p>
+                            <textarea id="manual-alts"
+                                class="w-full h-32 border border-slate-200 rounded-lg p-3 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-none bg-slate-50 placeholder:text-slate-300"
+                                placeholder="例：発泡酒を飲む, ワインを飲む, お風呂に長く浸かる"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === STEP 3: 分析結果 === -->
+            <div id="step-pane-3" class="step-pane hidden max-w-5xl mx-auto pb-10 space-y-6 relative">
+
+                <div class="flex items-center justify-between mb-6 border-b border-slate-200 pb-4">
+                    <h2 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                        <div class="w-8 h-8 rounded bg-blue-500 text-white flex items-center justify-center shadow-md">
+                            <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                        </div>
+                        分析結果 (INSIGHT)
+                    </h2>
+                    <div class="flex items-center gap-2 export-btns">
+                        <button onclick="exportMarkdown()"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-sm">
+                            <i data-lucide="copy" class="w-3.5 h-3.5"></i> MD
+                        </button>
+
+                    </div>
+                </div>
+
+                <div class="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
+                    <p class="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Target Action</p>
+                    <h3 class="text-2xl font-extrabold text-slate-800 border-b border-slate-100 pb-4 mb-4" id="res-action-title"></h3>
+
+                    <div class="flex items-center gap-2 text-xs text-blue-600 bg-blue-50/50 w-fit px-3 py-1.5 rounded-lg border border-blue-100 mb-8 no-print">
+                        <i data-lucide="edit-2" class="w-3.5 h-3.5"></i> テキストをクリックして直接編集できます (PDFには出力されません)
+                    </div>
+
+                    <!-- 最終目的 (Final Goal) -->
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 rounded-xl text-center relative mb-10 shadow-sm">
+                        <div class="absolute -top-3.5 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-md">
+                            <i data-lucide="flag" class="w-3.5 h-3.5"></i> 最終目的 (Final Goal)
+                        </div>
+                        <h4 class="text-xl sm:text-2xl font-bold text-indigo-950 editable inline-block min-w-[200px] mt-2"
+                            contenteditable="true" onblur="handleEdit('context', this.innerText)" id="res-context"></h4>
+                    </div>
+
+                    <!-- GUI Flow -->
+                    <div class="mb-10">
+                        <h4 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-1.5"><i
+                                data-lucide="git-merge" class="w-4 h-4 text-blue-500"></i> 心理・行動プロセス</h4>
+                        <div id="res-flow-wrapper"
+                            class="flex items-stretch gap-0 overflow-x-auto pb-4 pt-2 px-2 flex-nowrap min-h-[220px] relative sugoroku-container border border-slate-100 rounded-xl bg-slate-50">
+                        </div>
+                    </div>
+
+                    <!-- Mechanism & Pain Points -->
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-10">
+                        <div class="flex flex-col">
+                            <h4
+                                class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2 border-l-4 border-indigo-500 pl-2">
+                                <i data-lucide="microscope" class="w-5 h-5 text-indigo-500"></i> 選択メカニズム</h4>
+                            <div class="bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 p-6 rounded-2xl text-[15px] text-slate-700 leading-loose flex-grow shadow-sm relative overflow-hidden"
+                                id="res-mechanism"></div>
+                        </div>
+                        <div class="flex flex-col">
+                            <h4
+                                class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2 border-l-4 border-rose-500 pl-2">
+                                <i data-lucide="alert-triangle" class="w-5 h-5 text-rose-500"></i> ペインポイント</h4>
+                            <ul class="space-y-3 flex-grow" id="res-painpoints"></ul>
+                            <button onclick="addArrayItem('painPoints')"
+                                class="add-btn mt-4 text-[11px] font-bold text-rose-600 hover:text-white flex items-center gap-1.5 w-fit px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-500 transition-colors border border-rose-200">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> 追加する
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Alternative Analysis -->
+                    <div class="mb-10 border-t border-slate-200 pt-8">
+                        <h4
+                            class="text-base font-bold text-slate-800 mb-4 flex items-center gap-2 border-l-4 border-amber-400 pl-2">
+                            <i data-lucide="shield-alert" class="w-5 h-5 text-amber-500"></i> 代替手段の限界</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="res-alternatives"></div>
+                        <button onclick="addArrayItem('alternativeAnalysis')"
+                            class="add-btn mt-4 text-[10px] font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1 w-fit px-3 py-1.5 rounded-lg bg-amber-50 transition-colors border border-amber-100">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> 代替手段を追加
+                        </button>
+                    </div>
+
+                    <!-- UX Gain -->
+                    <div
+                        class="bg-gradient-to-br from-white via-emerald-50/30 to-teal-50 rounded-3xl shadow-xl border border-emerald-100 p-8 sm:p-10 text-slate-800 relative overflow-hidden mt-12">
+                        <div
+                            class="absolute top-0 right-0 w-64 h-64 bg-emerald-400 rounded-full blur-[100px] opacity-10 -mr-10 -mt-10 pointer-events-none">
+                        </div>
+                        <div
+                            class="absolute bottom-0 left-0 w-48 h-48 bg-teal-500 rounded-full blur-[80px] opacity-5 -ml-10 -mb-10 pointer-events-none">
+                        </div>
+                        <div class="relative z-10">
+                            <div class="flex items-center gap-3 mb-8">
+                                <div
+                                    class="p-2.5 bg-gradient-to-br from-emerald-400 to-teal-500 text-white rounded-xl shadow-md">
+                                    <i data-lucide="lightbulb" class="w-6 h-6"></i></div>
+                                <h3
+                                    class="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-emerald-600 to-teal-600">
+                                    New UX Gain</h3>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="res-uxgain"></div>
+                            <button onclick="addArrayItem('uxGain')"
+                                class="add-btn mt-8 text-[10px] font-bold text-emerald-600 hover:text-white flex items-center gap-1 w-fit px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-500 transition-colors border border-emerald-200">
+                                <i data-lucide="plus" class="w-3 h-3"></i> 企画を追加
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Hypothesis Validation (Interview) -->
+                    <div class="mt-10 border-t border-slate-100 pt-8">
+                        <div class="flex items-center justify-between mb-5">
+                            <h4 class="text-sm font-bold text-slate-700 flex items-center gap-1.5"><i
+                                    data-lucide="messages-square" class="w-4 h-4 text-blue-500"></i> 仮説検証インタビュー
+                                (Interview)</h4>
+                            <button onclick="generateInterviewQuestions()"
+                                class="gen-btns text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                                id="btn-gen-interview">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> 質問案を生成
+                            </button>
+                        </div>
+                        <div id="res-interview" class="space-y-3">
+                            <div
+                                class="text-xs text-slate-400 text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                まだ生成されていません。「✨ 質問案を生成」をクリックしてください。
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer Navigation (Next/Prev) -->
+        <div id="footer-nav"
+            class="h-20 bg-white/90 backdrop-blur-sm border-t border-slate-200 absolute bottom-0 left-0 right-0 flex items-center justify-between px-8 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+            <button id="btn-prev"
+                class="text-slate-400 hover:text-slate-600 font-bold text-sm flex items-center gap-1 transition-colors"
+                onclick="prevStep()">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i> 戻る
+            </button>
+
+            <div class="flex items-center gap-1 flex-col">
+                <div class="flex gap-1.5" id="footer-indicators">
+                    <!-- JS dynamically injected -->
+                </div>
+                <div class="text-[9px] font-mono text-blue-500 font-bold tracking-widest mt-1" id="footer-phase-text">
+                    PHASE 1 / 4</div>
+            </div>
+
+            <button id="btn-next"
+                class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2.5 px-6 rounded-full text-sm transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-500/30"
+                onclick="nextStep()">
+                <span id="btn-next-text">次へ (NEXT)</span> <i data-lucide="chevron-right" class="w-4 h-4"
+                    id="btn-next-icon"></i>
+            </button>
+        </div>
+
+        <!-- Floating Action Button (FAB) -->
+        <div class="absolute bottom-28 right-8 z-30 fab-container hidden" id="fab-container">
+            <div
+                class="absolute right-16 top-1/2 -translate-y-1/2 bg-blue-600 text-white text-[10px] font-bold px-3 py-1.5 rounded shadow-md pointer-events-none whitespace-nowrap opacity-0 fab-tooltip flex items-center gap-1 transition-all duration-300">
+                <span id="fab-tooltip-text">AIで自動生成</span>
+            </div>
+            <button id="fab-main"
+                class="w-14 h-14 bg-gradient-to-br from-blue-400 to-blue-600 text-white rounded-full shadow-lg shadow-blue-500/40 flex items-center justify-center transition-transform hover:scale-105 focus:outline-none"
+                onclick="handleFabClick()">
+                <i data-lucide="sparkles" class="w-6 h-6"></i>
+            </button>
+        </div>
+
+    </main>
+
+    <!-- Global Loading Overlay -->
+    <div id="loading-overlay"
+        class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex-col items-center justify-center text-white">
+        <div class="spinner mb-4"></div>
+        <h2 class="text-xl font-bold mb-1 tracking-wide" id="loading-title">AI Analyzing...</h2>
+        <p class="text-slate-300 text-xs" id="loading-text">処理を実行しています</p>
+    </div>
+
+    <!-- Manual Re-analyze Action Banner -->
+    <div id="reanalyze-banner"
+        class="fixed bottom-24 right-8 transform translate-y-32 opacity-0 transition-all duration-300 bg-white text-slate-800 p-4 rounded-xl shadow-2xl flex items-center gap-5 z-40 border border-slate-200">
+        <div class="flex items-center gap-3">
+            <div class="bg-amber-50 border border-amber-100 text-amber-500 p-2 rounded-lg"><i data-lucide="edit-3"
+                    class="w-4 h-4"></i></div>
+            <div>
+                <p class="text-xs font-bold">編集内容を検知しました</p>
+                <p class="text-[9px] text-slate-400 mt-0.5">AIで全体の論理を再最適化しますか？</p>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="cancelReanalyzeBanner()"
+                class="text-[10px] text-slate-500 hover:text-slate-700 hover:bg-slate-50 px-2 py-1.5 rounded transition-colors font-medium border border-slate-200">スキップ</button>
+            <button onclick="reanalyzeBasedOnEdits()"
+                class="text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 px-3 py-1.5 rounded transition-colors flex items-center gap-1 shadow-sm"><i
+                    data-lucide="sparkles" class="w-3 h-3"></i> 再分析</button>
+        </div>
+    </div>
+
+    <!-- Simple Toast -->
+    <div id="toast"
+        class="fixed top-6 left-1/2 transform -translate-x-1/2 -translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 text-white px-5 py-2.5 rounded-full shadow-lg flex items-center gap-2 z-50 border border-slate-700">
+        <i data-lucide="check-circle" class="text-blue-400 w-4 h-4" id="toast-icon"></i>
+        <span class="text-xs font-bold" id="toast-title">メッセージ</span>
+    </div>
+
+    <script>
+        // ==========================================
+        // 🧠 AIプロンプト設定 (AI Prompts Configuration)
+        // ==========================================
+        // AIに指示するプロンプトをここで一元管理しています。
+        // 内容を編集したい場合は、この部分だけを変更してください。
+        // ==========================================
+        const AI_PROMPTS = {
+            // 1. 行動例の自動生成 (Step 0)
+            ACTION_AUTO_COMPLETE: {
+                system: "日常のちょっとした消費行動や意思決定の例（例：プレミアム缶ビールを購入する、深夜にアイスを食べる、など）を一つだけ日本語で出力してください。",
+                user: () => `行動例を生成してください。`
+            },
+
+            // 2. ペルソナの自動生成 (Step 1)
+            PERSONA_AUTO_COMPLETE: {
+                system: "あなたはUXリサーチャーです。入力された行動を行う典型的なユーザーペルソナ、性格、およびその行動に至った具体的なエピソードを日本語で生成してください。",
+                user: (action) => `行動: ${action}`
+            },
+
+            // 3. 詳細設定の自動推論 (Step 2)
+            SETTINGS_AUTO_COMPLETE: {
+                system: "あなたはUXリサーチャーです。入力された行動とペルソナ情報から、行動の最終目的(context)、想定する行動フロー(flow、箇条書きのテキスト)、想定される代替手段(alternatives、カンマ区切りのテキスト)を推論して出力してください。最終目的は「情報の海」などの比喩を使わず、「〇〇のため」という極めてシンプルで誰にでも分かりやすい日常的な表現にしてください。行動フローは、「ONOFFを切り替える」「リラックスする」「就寝する」などの【親行動のプロセス】とし、入力された行動はその親行動のプロセスの中のひとつの手段（子行動）として位置づけてください。",
+                user: (action, personaInfo) => `行動: ${action}\n\n${personaInfo}`
+            },
+
+            // 4. メイン分析 (Step 3)
+            FULL_ANALYSIS: {
+                system: `あなたは行動経済学、認知心理学、人間中心設計（HCD）に精通したシニアUXリサーチ戦略家です。「メカニズム解明型ペインポイントアプローチ」を実行してください。
+
+🧠 Analysis Philosophy
+
+[ペルソナの完全反映] ★超重要: 全ての分析において「一般的な人間」を想定してはいけません。入力された【すべてのペルソナ要素（年齢、性別、職業、家族構成、性格、趣味、エピソード）】をくまなく掛け合わせ、最大限に反映してください。例えば「20代・営業職・負けず嫌い」なら「常に成果やタイパを気にする焦り」だったり、「年配・インドア派」ならまた別の価値観があるはずです。そのペルソナを形作るすべての要素から発生する特殊な生い立ち、制約、優先順位を必ず中心に据えてください。ペルソナ設定が異なれば、行動フローやペインポイントは全く違う結果にならなければなりません。
+
+[前提補完] ユーザーからペルソナや前提条件が提供されていない場合、ターゲット行動から最も典型的なユーザー像（ペルソナ）とエピソードを推測し、必ず出力に含めてください。
+
+[文脈] 生活のどの「秩序」を取り戻すためか。（「〇〇のため」という極めてシンプルで誰にでもわかる言葉にすること）
+
+[行動フロー] ★最重要: 最終目的を達成するためのプロセスを、「ONOFFを切り替える」「楽しむ」「リラックスする」などの【抽象度が高い親行動のフェーズ(stepName)】として4〜5段階で構築してください。
+行動構成には必ず【ペルソナ特有の行動】（例: 子供がいるなら「保育園のお迎え」「宿題のチェック」など）を組み込んでください。そして、入力された【ターゲット行動】がそのどこかに当たるように位置づけてください。ターゲット行動以外のステップでも、代表的な子行動(action)と複数の代替手段(alternatives)を挙げてください。
+
+[合理的メカニズム] ★最重要: ターゲット行動の選択に至るメカニズムを以下の2つの要素に分けて分析してください。
+1. ユーザーの条件 (userConditions): そのペルソナ特有の状況下で求めているものや制約条件（例:「明日も仕事だからアルコールは控える」「子供のご飯優先だから手早く済ませたい」など）を2〜4つ、配列(ARRAY)で簡潔に挙げてください。
+2. 選択メカニズム (selectionMechanism): 上記の条件を満たすものとして、なぜ他の代替手段ではなくそのターゲット行動を選択したのか。その行動が最も合理的であった理由を論理的につなげて説明してください（150文字程度で簡潔に）。
+
+[構造的ペイン] 優れた手段を選んだ副作用と、捨てられない制約の板挟み構造。ペルソナの状況、家族構成、考え方、心情、性格などの固有設定に基づき、解決したい・怒る葛藤などをなるべく特異な視点で分析しペインポイントを複数挙げる。
+
+[代替手段の限界] ターゲット行動以外の回避策（他の子行動）がなぜ選択されないのか、満足度を下げるのか。この際、代替手段ごとに発生する具体的なペインポイント(alternativeAnalysis.painPoint)を明確に特定してください。
+
+[UX企画] ★最重要: 
+1. 抽出した「構造的ペイン(painPoints)」に対する解決策。
+2. 「代替手段の限界(alternativeAnalysis)」で挙げた各ペインポイント(painPoint)に対する解決策。
+上記1と2を合わせた【全てのペインポイントの合計数】と同じ数だけ、UX企画(uxGain)を提案してください。各企画は特定のペインを1対1で解決する物理的・具体的な提案とし、どのペインを解決するのかをtargetPainに明記してください。比喩表現は禁止です。
+
+⚠️ Constraints
+
+文脈(context)や行動(action)において「情報の海」「聖域化」「儀式」などの比喩的・文学的・ポエティックな表現は一切禁止。小学生でも情景が浮かぶ単純で客観的な言葉を使うこと。
+
+全て日本語で指定されたJSONスキーマに従い出力せよ。`,
+                user: (actionText, manualInputs) => `ターゲット行動: 「${actionText}」\n${manualInputs}`
+            },
+
+            // 5. ユーザー編集に基づく再最適化 (Step 3: Edit)
+            REANALYZE_ON_EDIT: {
+                system: `あなたはUX設計のプロフェッショナルです。以下のJSONは、前回生成した結果を【ユーザーが直接編集・修正】したものです。ユーザーが編集した最新のデータを「絶対の正解」として受け取り、その変更が全体の「メカニズムの連鎖」に与える影響をゼロベースで再計算してください。最終目的が変更された場合はフローを根本から再構築してください。
+【重要ルール】
+- 変更されたペルソナの【全要素】（年齢、性別、職業、性格、家族構成、エピソード等）の背景を最大限に尊重し、それらが複雑に絡み合った「そのペルソナ特有の行動・制約」が色濃く出るように全体を再最適化・再構築してください。
+- 最終目的(context)は「〇〇のため」など、日常的でシンプルな表現にすること。
+- 行動フロー(flow)の各ステップ(stepName)は「ONOFFを切り替える」「楽しむ」「リラックスする」などの【親行動】とし、ターゲット行動や代替手段はその親に属する具体的な【子行動】(action)としてください。
+- 行動(action)は比喩表現を一切禁止し、客観的な動作にすること。
+- 抽出した全てのペインポイント（メインの構造的ペイン ＋ 代替手段のペイン）の【合計数】と同じ数だけ、それぞれのペインを解決するUX企画(uxGain)を生成してください。どのペインを解決するかをtargetPainに明記してください。
+- 指定のJSONスキーマに厳格に従い、全要素を日本語で出力してください。`,
+                user: (payloadText) => `【現在の分析データ（ユーザー編集反映済み）】\n${payloadText}\n\nこのデータを元に、全体の一貫性が保たれるように再生成してください。`
+            },
+
+            // 6. UX企画の具体化 (Deep Dive)
+            DEEP_DIVE_UX_GAIN: {
+                system: "あなたは新規事業開発のスペシャリストです。提示されたUX企画案をさらに深掘りし、ユーザーの心を掴むキャッチコピー、実現するための具体的なコア機能（3つ）、想定されるマネタイズ手法（ビジネスモデル）を出力してください。",
+                user: (title, description) => `企画タイトル: ${title}\n企画概要: ${description}`
+            },
+
+            // 7. 仮説検証インタビューの生成
+            GENERATE_INTERVIEW: {
+                system: "あなたはUXリサーチャーです。以下の分析データを基に、この仮説（特にペインポイントと選択メカニズム）が本当に正しいかを実際のユーザーに検証するためのデプスインタビュー質問案を5つ作成してください。誘導尋問にならないよう、ユーザーの過去の経験や事実を引き出すオープンエンドな質問にしてください。",
+                user: (dataString) => `【分析データ】\n${dataString}`
+            }
+        };
+
+
+        // --- System Configuration ---
+        let apiKey = localStorage.getItem('ux_insight_api_key') || "";
+        let selectedModel = localStorage.getItem('ux_insight_selected_model') || "";
+        let isSidebarCollapsed = localStorage.getItem('ux_insight_sidebar_collapsed') === 'true';
+
+        function toggleSidebar() {
+            isSidebarCollapsed = !isSidebarCollapsed;
+            localStorage.setItem('ux_insight_sidebar_collapsed', isSidebarCollapsed);
+            applySidebarState();
+        }
+
+        function applySidebarState() {
+            const sidebar = document.getElementById('left-sidebar');
+            const toggleIcon = document.getElementById('sidebar-toggle-icon');
+            if (isSidebarCollapsed) {
+                sidebar.classList.add('sidebar-collapsed');
+                if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'chevron-right');
+            } else {
+                sidebar.classList.remove('sidebar-collapsed');
+                if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'chevron-left');
+            }
+            if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        }
+
+        // --- Mock Data for Testing ---
+        function loadMockData() {
+            const mock = {
+                action: "【デバッグ用】深夜にコンビニで新発売のお菓子を衝動買いする",
+                context: "日々の業務ストレスから一瞬だけ解放され、手軽な刺激（糖分と新しさ）を得ることで、沈んだ気分を上向きに整えるため。連日の高負荷なデスクワークにより、脳がブドウ糖と非日常的な報酬系を強く求めている状態。",
+                persona: {
+                    name: "山田 太郎", age: 34, gender: "男性", occupation: "IT企業 プロジェクトマネージャー",
+                    family: "妻と2人暮らし", hobbies: "サウナ、最新ガジェット収集、ポッドキャスト聴取", personality: "普段は極めて論理的で健康意識も高いが、仕事の極限状態では『今だけの免罪符』を自分に与えることで精神の均衡を保とうとする。責任感が非常に強く、周囲の期待に応えようと無理をしがち。",
+                    episode: "大きなプロジェクトのリリース直前で、3日連続の深夜タクシー帰り。脳が痺れるような疲労感の中、自宅最寄りのコンビニの照明が、暗い街中で唯一の救いのように見えた。入店した瞬間、棚に並んだ『金色の濃厚バター仕立て』という新発売のポップが目に飛び込み、一瞬で心が支配された。"
+                },
+                flow: [
+                    { stepName: "帰路・入店", action: "深夜の静かな通りから、光り輝くコンビニへ吸い寄せられるように入店。自動ドアが開く瞬間の乾いた涼しさに一瞬だけ現実に引き戻される。", alternatives: ["まっすぐ帰宅して即就寝", "自宅近くの自動販売機で飲み物だけ買う"], isTargetAction: false },
+                    { stepName: "商品物色", action: "迷わず新商品コーナーへ。普段なら栄養成分表示を気にするが、今は『新しさ』と『視覚的な報酬感』だけを頼りに棚を眺める。", alternatives: ["定番のポテトチップスを買う", "サラダやサラダチキン等の健康食品"], isTargetAction: false },
+                    { stepName: "ターゲット行動", action: "『期間限定：焦がしバター＆トリュフ香る厚切りポテト』を手に取り、その重量感とパッケージの高級感を確認する。", alternatives: ["やっぱり我慢して店を出る", "小さいサイズのチョコで済ませる"], isTargetAction: true },
+                    { stepName: "決済・退店", action: "セルフレジでサッと会計。店員との接触すら億劫なため。袋は断り、大事そうに脇に抱えて店を出る。", alternatives: ["有人レジで丁寧に並ぶ", "ポイントカードの端数を調整して使う"], isTargetAction: false },
+                    { stepName: "実食", action: "自宅の静かなリビングで、PCを閉じた後に一気に開封。立ち昇る濃厚な香りに、今日一日の苦労が報われたような錯覚を覚える。", alternatives: ["一口だけ食べて翌朝に回す", "家族と一緒に食べるために残しておく"], isTargetAction: false }
+                ],
+                userConditions: [
+                    "短時間で最大の報酬（糖分・脂質）を摂取し、ストレスで削れた精神を補填したい",
+                    "複雑な意思決定リソースが枯渇しており、『新発売』という強いシグナルに従いたい",
+                    "『頑張った自分』に対する目に見える形での承認・ご褒美を求めている"
+                ],
+                selectionMechanism: "慢性的疲労により、自己制御を司る前頭前皮質の機能が一時的に低下。代わりとして報酬系を司る側坐核が優位となり、最も手軽に、かつ将来の負債（体重増加等）を無視して短期的な快楽を得られる選択肢として『衝動買い』が正当化された。",
+                painPoints: [
+                    "実食直後の多幸感から一転、食べ終えた後の激しい罪悪感による睡眠満足度の低下",
+                    "深夜の疲れた指先にはパッケージのノッチ（切り込み）が小さく、開封の際にもどかしさを感じる",
+                    "強すぎる味付けにより喉が乾き、結果として睡眠を妨げる大量の水分の同時摂取を誘発する"
+                ],
+                alternativeAnalysis: [
+                    { alternative: "まっすぐ帰って即就寝", reasonNotChosen: "脳が交感神経優位のまま覚醒しており、何かを摂取して副交感神経に切り替えないと落ち着かない", painPoint: "充足感のない空虚な睡眠と、翌朝のさらなる疲労感" },
+                    { alternative: "定番のポテトチップスを買う", reasonNotChosen: "『日常の継続』では脳が新しい報酬として認識せず、ストレス解消のトリガーにならない", painPoint: "慣れによるマンネリ感と、期待値を超えない充足不足" },
+                    { alternative: "サラダや健康食品を買う", reasonNotChosen: "強い咀嚼や消化コストを脳が拒否しており、極めて受動的な報酬（高カロリー）を求めている", painPoint: "食事としての重さと、脳が求める『禁断の快楽』の不在" }
+                ],
+                uxGain: [
+                    { 
+                        targetPain: "実食後の罪悪感", title: "夜食免罪符『Reward Snacking』", description: "低糖質ながら満足感を維持しつつ、パッケージの裏でお疲れ様と声をかけてくれる応援パッケージ。食べた後の心のケアまでを商品体験として設計。",
+                        deepDiveData: {
+                            catchcopy: "罪悪感を、明日への自信に変える1袋。",
+                            coreFeatures: ["内側に隠された『今日を肯定する』10種類の応援メッセージ", "食べた記録を管理し、適切な休息時間をリマインドする専用アプリ連携", "夜間専用の、胃に優しくかつ脳に満足感を与える独自開発の多孔質チップス構造"],
+                            monetization: "コンビニエンスストア等でのプレミアム価格販売（通常の1.5倍）、およびアプリを通じた睡眠/栄養改善サービスのサブスクリプション誘導"
+                        }
+                    },
+                    { 
+                        targetPain: "パッケージの開きにくさ", title: "Stress-Free Tear-Off", description: "指一本のスライドで、中身の香りが広がりながら美しく開く、疲弊した脳と指先に配慮した開口設計。",
+                        deepDiveData: {
+                            catchcopy: "もう、指先一ミリのストレスも与えない。",
+                            coreFeatures: ["マイクロパンチング加工による、どの角度からでも吸い込まれるような開封体験", "開封した瞬間に立ち昇るアロマを最大化する計算された形状設計", "片手での流し込みやすさを追求した、食べこぼしゼロのガイド機能付き開口部"],
+                            monetization: "パッケージライセンスの提供および、大手製菓メーカーへのOEM供給モデル"
+                        }
+                    },
+                    { 
+                        targetPain: "喉が乾く・睡眠を妨げる", title: "Deep Sleep Snacking Set", description: "一口ごとに異なるフレーバーが広がるよう設計。テアニン等のリラックス成分を配合し、睡眠の質を高める設計に基づいた次世代お菓子。",
+                        deepDiveData: {
+                            catchcopy: "食べる、整う、眠る。深夜のお菓子革命。",
+                            coreFeatures: ["GABA・テアニンを黄金比で配合したリラクゼーション・グレーズ", "時間が経つほど風味が変化し、少量でも高い脳内満足度を実現するフレーバータイムリリース", "口内の水分を奪いすぎない、高水分保持型ベイクド製法"],
+                            monetization: "オフィス向け配置型サービス（福利厚生）や、D2C定期購入モデルでのパーソナライズ販売"
+                        }
+                    }
+                ]
+            };
+            currentAnalysisData = mock;
+            // 仮説検証インタビューのモックデータも追加
+            currentInterviewData = [
+                { question: "深夜にコンビニへ吸い寄せられる際、頭の中で『新発売』という言葉以外にどのような言葉やイメージが浮かんでいますか？", intent: "前頭葉の抑制が外れる瞬間の、無意識下でのトリガーを確認する。" },
+                { question: "お菓子を手にする直前、健康や明日の朝のことを考えましたか？その時、それをどう自分の中で打ち消しましたか？", intent: "認知的不協和を解消するための自己正当化メカニズムのパターンを特定する。" },
+                { question: "開封した時、最も満足感が高いのはどの瞬間ですか？（香り、最初の食感、それとも一口目を飲み込んだ後？）", intent: "報酬系のピークがどこにあるかを特定し、製品設計の力点を明確にする。" },
+                { question: "一度購入しなかった夜があるとしたら、その時は何がブレーキになりましたか？", intent: "ハードル（ペイン）を特定し、代替手段との比較軸を精査する。" },
+                { question: "食べ終えた後の自分に、どのような言葉をかけてもらえたら罪悪感が軽減されると感じますか？", intent: "UX Gainの『応援メッセージ』機能の具体的な方向性を検証する。" }
+            ];
+
+            // フォーム反映
+            els.input.value = mock.action;
+            els.pName.value = mock.persona.name; els.pAge.value = mock.persona.age; 
+            els.pOccupation.value = mock.persona.occupation; els.pHobbies.value = mock.persona.hobbies;
+            els.pPersonality.value = mock.persona.personality; els.pEpisode.value = mock.persona.episode;
+            els.mContext.value = mock.context;
+            els.mFlow.value = mock.flow.map(s => `- ${s.stepName}: ${s.action}`).join('\n');
+            els.mAlts.value = mock.alternativeAnalysis.map(a => a.alternative).join(', ');
+            
+            showSimpleToast("本番相当のモックデータを読み込みました");
+            renderResults();
+            switchMainTab(3);
+        }
+
+        function saveApiKey() {
+            const inputVal = document.getElementById('api-key-input').value.trim();
+            if (inputVal) {
+                apiKey = inputVal;
+                localStorage.setItem('ux_insight_api_key', apiKey);
+                showSimpleToast("APIキーを保存しました。モデルを取得中...", true);
+                fetchAvailableModels();
+            } else {
+                apiKey = "";
+                localStorage.removeItem('ux_insight_api_key');
+                localStorage.removeItem('ux_insight_selected_model');
+                showSimpleToast("APIキーを削除しました", false);
+                const select = document.getElementById('model-select');
+                if (select) select.innerHTML = '<option value="">APIキー入力後に取得...</option>';
+            }
+            updateApiStatusUI();
+        }
+
+        function updateSelectedModel() {
+            const select = document.getElementById('model-select');
+            selectedModel = select.value;
+            localStorage.setItem('ux_insight_selected_model', selectedModel);
+            document.getElementById('model-auto-select-msg').classList.add('hidden');
+            updateModelStatusUI();
+        }
+
+        async function fetchAvailableModels() {
+            if (!apiKey) return;
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                if (!response.ok) {
+                    let errData; try { errData = await response.json(); } catch (e) { }
+                    throw new Error(errData?.error?.message || "モデル一覧の取得に失敗しました");
+                }
+                const data = await response.json();
+                const allModels = data.models || [];
+                
+                // 分析に使用可能なモデル（生成機能を持つもの）を抽出
+                const canGenModels = allModels.filter(m => m.supportedGenerationMethods.includes('generateContent'));
+                
+                const select = document.getElementById('model-select');
+                select.innerHTML = '';
+                
+                // 優先順位: ユーザーが指定した推奨モデル、最新順
+                const priorities = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro", "gemini-flash"];
+                
+                let foundBest = "";
+                canGenModels.forEach(m => {
+                    const modelId = m.name.replace('models/', '');
+                    const option = document.createElement('option');
+                    option.value = modelId;
+                    option.textContent = m.displayName || modelId;
+                    select.appendChild(option);
+                    
+                    // まだ最適なモデルが見つかっておらず、かつ優先リストに含まれている場合
+                    if (!foundBest) {
+                        for (const p of priorities) {
+                            if (modelId.includes(p)) { foundBest = modelId; break; }
+                        }
+                    }
+                });
+
+                if (canGenModels.length > 0) {
+                    select.classList.remove('hidden');
+                    // 保存されているモデルがあればそれを、なければ最適なもの、それもなければ最初のものを
+                    if (!selectedModel || !canGenModels.some(m => m.name.includes(selectedModel))) {
+                        selectedModel = foundBest || canGenModels[0].name.replace('models/', '');
+                        document.getElementById('model-auto-select-msg').classList.remove('hidden');
+                    }
+                    select.value = selectedModel;
+                    localStorage.setItem('ux_insight_selected_model', selectedModel);
+                    updateModelStatusUI();
+                }
+            } catch (err) {
+                console.error(err);
+                showSimpleToast("モデル取得失敗: " + err.message, 'error');
+            }
+        }
+
+        function updateApiStatusUI() {
+            const indicator = document.getElementById('api-status-indicator');
+            const input = document.getElementById('api-key-input');
+            if (indicator && input) {
+                if (apiKey) {
+                    indicator.classList.replace('bg-slate-300', 'bg-green-400');
+                    indicator.classList.replace('bg-rose-400', 'bg-green-400');
+                    input.value = apiKey;
+                } else {
+                    indicator.classList.replace('bg-green-400', 'bg-rose-400');
+                    indicator.classList.replace('bg-slate-300', 'bg-rose-400');
+                    input.value = "";
+                }
+            }
+            updateModelStatusUI();
+        }
+
+        function updateModelStatusUI() {
+            const select = document.getElementById('model-select');
+            if (select) {
+                if (apiKey && selectedModel) {
+                    select.classList.add('border-blue-200', 'bg-blue-50/30', 'text-blue-700');
+                    select.classList.remove('text-slate-600');
+                } else {
+                    select.classList.remove('border-blue-200', 'bg-blue-50/30', 'text-blue-700');
+                    select.classList.add('text-slate-600');
+                }
+            }
+        }
+
+        async function testApiConnection() {
+            if (!apiKey) {
+                showSimpleToast("APIキーが入力されていません", 'error');
+                return;
+            }
+            showLoading(true, "Testing Connection...", "API接続を確認中...");
+            try {
+                // 最小限のリクエストでテスト
+                await fetchGemini(
+                    "接続テストです。OKとだけ返してください。",
+                    { type: "object", properties: { status: { type: "string" } } },
+                    "あなたは接続確認用のボットです。"
+                );
+                showSimpleToast("API接続に成功しました！", 'success');
+            } catch (err) {
+                showSimpleToast("接続失敗: " + err.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        lucide.createIcons();
+
+        // --- API Configuration & State ---
+        let currentAnalysisData = null;
+        let currentInterviewData = null;
+        let currentStep = 0;
+
+        const STEPS = [
+            { id: 'step-pane-0', name: '行動入力', progress: '0%' },
+            { id: 'step-pane-1', name: 'ペルソナ設定', progress: '33%' },
+            { id: 'step-pane-2', name: '詳細設定', progress: '66%' },
+            { id: 'step-pane-3', name: '分析結果', progress: '100%' }
+        ];
+
+        // --- DOM Elements ---
+        const els = {
+            get sidebarStepper() { return document.getElementById('sidebar-stepper'); },
+            get footerIndicators() { return document.getElementById('footer-indicators'); },
+            get footerPhaseText() { return document.getElementById('footer-phase-text'); },
+            get btnPrev() { return document.getElementById('btn-prev'); },
+            get btnNext() { return document.getElementById('btn-next'); },
+            get btnNextText() { return document.getElementById('btn-next-text'); },
+            get btnNextIcon() { return document.getElementById('btn-next-icon'); },
+            get fabContainer() { return document.getElementById('fab-container'); },
+            get fabTooltipText() { return document.getElementById('fab-tooltip-text'); },
+
+            get form() { return document.getElementById('search-form'); },
+            get input() { return document.getElementById('action-input'); },
+            get overlay() { return document.getElementById('loading-overlay'); },
+            get loadingTitle() { return document.getElementById('loading-title'); },
+            get loadingText() { return document.getElementById('loading-text'); },
+
+            get reanalyzeBanner() { return document.getElementById('reanalyze-banner'); },
+            get toast() { return document.getElementById('toast'); },
+            get toastTitle() { return document.getElementById('toast-title'); },
+            get toastIcon() { return document.getElementById('toast-icon'); },
+
+            get pName() { return document.getElementById('p-name'); }, get pAge() { return document.getElementById('p-age'); }, get pGenderRadios() { return document.getElementsByName('p-gender'); }, get pFamily() { return document.getElementById('p-family'); }, get pOccupation() { return document.getElementById('p-occupation'); }, get pHobbies() { return document.getElementById('p-hobbies'); }, get pPersonality() { return document.getElementById('p-personality'); }, get pEpisode() { return document.getElementById('p-episode'); },
+            get mContext() { return document.getElementById('manual-context'); }, get mFlow() { return document.getElementById('manual-flow'); }, get mAlts() { return document.getElementById('manual-alts'); },
+
+            get rAction() { return document.getElementById('res-action-title'); }, get rContext() { return document.getElementById('res-context'); }, get rFlow() { return document.getElementById('res-flow-wrapper'); }, get rMech() { return document.getElementById('res-mechanism'); }, get rPain() { return document.getElementById('res-painpoints'); }, get rAlt() { return document.getElementById('res-alternatives'); }, get rGain() { return document.getElementById('res-uxgain'); }, get rInterview() { return document.getElementById('res-interview'); }
+        };
+
+        // --- Init & Navigation ---
+        function initApp() {
+            applySidebarState();
+            updateApiStatusUI();
+            if (apiKey) fetchAvailableModels();
+            switchMainTab(currentStep);
+        }
+
+        function renderNavigation() {
+            els.sidebarStepper.innerHTML = '';
+            STEPS.forEach((step, idx) => {
+                const isActive = idx === currentStep;
+                const isCompleted = idx < currentStep;
+
+                let badgeClass = 'bg-slate-100 text-slate-400 border-2 border-white';
+                if (isActive) badgeClass = 'bg-blue-500 text-white shadow-sm border-2 border-blue-500';
+                else if (isCompleted) badgeClass = 'bg-blue-100 text-blue-500 border-2 border-white';
+
+                let btnClass = 'bg-transparent text-slate-500 hover:bg-slate-50 font-medium';
+                if (isActive) btnClass = 'bg-blue-50 border border-blue-100 text-blue-700 font-bold';
+
+                const iconOrNumber = isCompleted ? '<i data-lucide="check" class="w-3 h-3"></i>' : (idx + 1);
+
+                const itemHtml = `
+                    <div class="relative pl-6 z-10 cursor-pointer group" onclick="switchMainTab(${idx})">
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 z-20 ${badgeClass}">${iconOrNumber}</div>
+                        <div class="flex items-center px-4 py-3 ml-2 rounded-xl transition-all duration-200 ${btnClass}">
+                            <span class="text-xs tracking-wide">${step.name}</span>
+                        </div>
+                    </div>
+                `;
+                els.sidebarStepper.insertAdjacentHTML('beforeend', itemHtml);
+            });
+
+            els.footerIndicators.innerHTML = '';
+            STEPS.forEach((_, idx) => {
+                const bg = idx === currentStep ? 'bg-blue-500 border-blue-500' : (idx < currentStep ? 'bg-blue-200 border-blue-200' : 'bg-transparent border-slate-300');
+                els.footerIndicators.innerHTML += `<div class="w-5 h-2 -skew-x-12 border transition-colors ${bg}"></div>`;
+            });
+            els.footerPhaseText.textContent = `PHASE ${currentStep + 1} / ${STEPS.length}`;
+
+            els.btnPrev.style.visibility = currentStep === 0 ? 'hidden' : 'visible';
+
+            if (currentStep === 3) {
+                els.btnNext.style.display = 'none'; els.fabContainer.classList.add('hidden');
+            } else {
+                els.btnNext.style.display = 'flex';
+                if (currentStep === 2) {
+                    els.btnNextText.textContent = '分析を実行する'; els.btnNextIcon.setAttribute('data-lucide', 'sparkles');
+                } else {
+                    els.btnNextText.textContent = '次へ (NEXT)'; els.btnNextIcon.setAttribute('data-lucide', 'chevron-right');
+                }
+                els.fabContainer.classList.remove('hidden');
+                if (currentStep === 0) els.fabTooltipText.textContent = "行動例をAI生成";
+                else if (currentStep === 1) els.fabTooltipText.textContent = "ペルソナをAI生成";
+                else if (currentStep === 2) els.fabTooltipText.textContent = "詳細設定をAI推論";
+            }
+            if (window.lucide && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
+            }
+        }
+
+        function switchMainTab(targetIndex) {
+            // ペルソナ変更後の再分析対応 (明示的に更新をかける)
+            if (isPersonaChanged && targetIndex !== 1 && currentAnalysisData && currentAnalysisData.action) {
+                isPersonaChanged = false;
+                const actionCache = currentAnalysisData.action;
+                // ペルソナをUIの入力から取得してデータに反映
+                let gender = ""; Array.from(els.pGenderRadios).forEach(r => { if (r.checked) gender = r.value; });
+                currentAnalysisData.persona = {
+                    name: els.pName.value, age: Math.round(els.pAge.value) || null,
+                    gender: gender, occupation: els.pOccupation.value, family: els.pFamily.value,
+                    hobbies: els.pHobbies.value, personality: els.pPersonality.value, episode: els.pEpisode.value
+                };
+                // 分析結果画面(タブ3) または他タブに移る際、再分析を走らせる
+                cancelReanalyzeBanner();
+                // reanalyzeBackground() は廃止し、全体再構築を行う
+                performFullAnalysis(actionCache, false);
+            }
+
+            document.querySelectorAll('.step-pane').forEach(el => el.classList.add('hidden')); 
+            document.getElementById(`step-pane-${targetIndex}`).classList.remove('hidden');
+            currentStep = targetIndex; 
+            document.getElementById('main-content-area').scrollTop = 0;
+            renderNavigation();
+        }
+
+        // reanalyzeBackground is removed
+
+        function nextStep() {
+            if (currentStep === 0) { if (!els.input.value.trim()) { showSimpleToast("ターゲット行動を入力してください", 'error'); els.input.focus(); return; } switchMainTab(1); }
+            else if (currentStep === 1) { switchMainTab(2); }
+            else if (currentStep === 2) { performFullAnalysis(els.input.value.trim(), true); }
+        }
+        function prevStep() { if (currentStep > 0) switchMainTab(currentStep - 1); }
+        function handleFabClick() {
+            if (currentStep === 0) autoCompleteAction();
+            else if (currentStep === 1) autoCompletePersona();
+            else if (currentStep === 2) autoCompleteSettings();
+        }
+
+        async function autoFillAllInputs() {
+            const action = els.input.value.trim();
+            if (!action) { showSimpleToast("ターゲット行動を先に入力してください", 'error'); switchMainTab(0); return; }
+
+            showLoading(true, "AI Generating All...", "ペルソナと前提条件を一括生成中...");
+            try {
+                const schema = {
+                    type: "object",
+                    required: ["persona", "context", "flow", "alternatives"],
+                    properties: {
+                        persona: analysisSchema.properties.persona,
+                        context: { type: "string" },
+                        flow: { type: "string", description: "箇条書き形式の行動フロー" },
+                        alternatives: { type: "string", description: "カンマ区切りの代替手段リスト" }
+                    }
+                };
+                const prompt = AI_PROMPTS.GENERATE_ALL_INPUTS;
+                const res = await fetchGemini(prompt.user(action), schema, prompt.system);
+
+                if (res.persona) {
+                    const p = res.persona;
+                    els.pName.value = p.name || ""; els.pAge.value = p.age || "";
+                    els.pOccupation.value = p.occupation || ""; els.pHobbies.value = p.hobbies || "";
+                    els.pPersonality.value = p.personality || ""; els.pEpisode.value = p.episode || "";
+                    Array.from(els.pGenderRadios).forEach(r => { if (r.value === p.gender) r.checked = true; });
+                }
+                if (res.context) els.mContext.value = res.context;
+                if (res.flow) els.mFlow.value = res.flow;
+                if (res.alternatives) els.mAlts.value = res.alternatives;
+
+                showSimpleToast("全項目をAIで自動入力しました");
+                if (currentStep !== 2) switchMainTab(2);
+            } catch (err) {
+                showSimpleToast("自動入力に失敗しました: " + err.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // --- Utility Functions ---
+        function ensureArray(val) { return (!val) ? [] : Array.isArray(val) ? val : [val]; }
+        function showLoading(show, title = "AI Analyzing...", text = "") { els.loadingTitle.textContent = title; els.loadingText.textContent = text; els.overlay.classList.toggle('hidden', !show); els.overlay.classList.toggle('flex', show); }
+        function showSimpleToast(title, type = 'success') {
+            els.toastTitle.textContent = title; 
+            els.toast.className = "fixed top-6 left-1/2 transform -translate-x-1/2 -translate-y-20 opacity-0 transition-all duration-300 px-5 py-2.5 rounded-full shadow-lg flex items-center gap-2 z-50 border max-w-[90vw]";
+            if (type === 'success' || type === true) {
+                els.toastIcon.setAttribute('data-lucide', 'check-circle');
+                els.toastIcon.className = "w-4 h-4 text-blue-400 flex-shrink-0";
+                els.toast.classList.add('bg-slate-800', 'text-white', 'border-slate-700');
+            } else if (type === 'error' || type === false) {
+                els.toastIcon.setAttribute('data-lucide', 'alert-circle');
+                els.toastIcon.className = "w-4 h-4 text-rose-500 flex-shrink-0";
+                els.toast.classList.add('bg-rose-50', 'text-rose-900', 'border-rose-200');
+            } else {
+                els.toastIcon.setAttribute('data-lucide', 'info');
+                els.toastIcon.className = "w-4 h-4 text-amber-500 flex-shrink-0";
+                els.toast.classList.add('bg-slate-800', 'text-white', 'border-slate-700');
+            }
+            if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+            setTimeout(() => els.toast.classList.remove('opacity-0', '-translate-y-20'), 10); 
+            setTimeout(() => els.toast.classList.add('opacity-0', '-translate-y-20'), 5000);
+        }
+        function resetApp() {
+            els.input.value = ''; els.pName.value = ''; els.pAge.value = ''; els.pFamily.value = ''; els.pOccupation.value = ''; els.pHobbies.value = ''; els.pPersonality.value = ''; els.pEpisode.value = '';
+            Array.from(els.pGenderRadios).forEach(r => r.checked = false); els.mContext.value = ''; els.mFlow.value = ''; els.mAlts.value = '';
+            cancelReanalyzeBanner(); switchMainTab(0); currentAnalysisData = null; currentInterviewData = null; els.rInterview.innerHTML = `<div class="text-xs text-slate-400 text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">まだ生成されていません。「✨ 質問案を生成」をクリックしてください。</div>`;
+        }
+
+        // --- API Helpers & Schema ---
+        const analysisSchema = {
+            type: "object",
+            required: ["context", "flow", "userConditions", "selectionMechanism", "painPoints", "alternativeAnalysis", "uxGain"],
+            properties: {
+                persona: {
+                    type: "object",
+                    properties: { name: { type: "string" }, age: { type: "integer" }, gender: { type: "string" }, occupation: { type: "string" }, family: { type: "string" }, hobbies: { type: "string" }, personality: { type: "string" }, episode: { type: "string" } }
+                },
+                context: { type: "string" },
+                flow: { 
+                    type: "array", 
+                    items: { 
+                        type: "object", 
+                        properties: { 
+                            stepName: { type: "string" }, 
+                            action: { type: "string" }, 
+                            alternatives: { type: "array", items: { type: "string" } }, 
+                            isTargetAction: { type: "boolean" } 
+                        }, 
+                        required: ["stepName", "action", "alternatives"] 
+                    } 
+                },
+                userConditions: { type: "array", items: { type: "string" }, description: "ユーザーの求めているものや制約条件" },
+                selectionMechanism: { type: "string", description: "ターゲット行動を選択した合理的かつ論理的な説明" },
+                painPoints: { type: "array", items: { type: "string" } },
+                alternativeAnalysis: { type: "array", items: { type: "object", properties: { alternative: { type: "string" }, reasonNotChosen: { type: "string" }, painPoint: { type: "string" } }, required: ["alternative", "reasonNotChosen", "painPoint"] } },
+                uxGain: { type: "array", items: { type: "object", properties: { targetPain: { type: "string" }, title: { type: "string" }, description: { type: "string" }, deepDiveData: { type: "object", properties: { catchcopy: { type: "string" }, coreFeatures: { type: "array", items: { type: "string" } }, monetization: { type: "string" } } } }, required: ["targetPain", "title", "description"] } }
+            }
+        };
+
+        async function fetchGemini(promptText, schema, systemInstruction) {
+            if (!apiKey) {
+                throw new Error("Gemini APIキーが設定されていません。左下の設定欄からAPIキーを入力してください。");
+            }
+            // 選択されたモデルを使用、取得できていない場合はデフォルトを使用
+            const modelToUse = selectedModel || "gemini-2.5-flash";
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+            
+            // API仕様に合わせ、snake_caseのパラメータ名を使用
+            const payload = { 
+                contents: [{ parts: [{ text: promptText }] }], 
+                system_instruction: { parts: [{ text: systemInstruction || "" }] }, 
+                generation_config: { 
+                    response_mime_type: "application/json", 
+                    response_schema: schema 
+                } 
+            };
+
+            const delays = [2000, 5000, 10000];
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(endpoint, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify(payload) 
+                    });
+                    
+                    if (!response.ok) { 
+                        let errData; 
+                        try { errData = await response.json(); } catch(e){}
+                        const errorMsg = errData?.error?.message || "未知のエラー";
+                        
+                        if (response.status === 429) {
+                            if (i < 2) { 
+                                await new Promise(res => setTimeout(res, delays[i]));
+                                continue;
+                            }
+                            throw new Error(`APIの無料枠制限に達しました。約1分ほど待ってから再度お試しください (429: ${errorMsg})`);
+                        }
+                        if (response.status === 401 || response.status === 403) throw new Error(`APIキーが無効です。設定を確認してください (401/403: ${errorMsg})`);
+                        if (response.status >= 500) throw new Error(`AIサーバーが混雑しています (${response.status}: ${errorMsg})`);
+                        throw new Error(`AI通信エラー (${response.status}: ${errorMsg})`); 
+                    }
+                    
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("回答が空でした。もう一度お試しください。"); 
+                    return JSON.parse(text);
+                } catch (e) { 
+                    if (i === 2) throw e; 
+                    await new Promise(res => setTimeout(res, delays[i])); 
+                }
+            }
+        }
+
+        // --- Main Logic (Auto Completes for each tab) ---
+        async function autoCompleteAction() {
+            showLoading(true, "AI Generation...", "行動例を生成しています");
+            try {
+                const prompt = AI_PROMPTS.ACTION_AUTO_COMPLETE;
+                const schema = { type: "object", properties: { action: { type: "string" } } };
+                const resData = await fetchGemini(prompt.user(), schema, prompt.system);
+                if (resData.action) els.input.value = resData.action; showSimpleToast("行動例を自動入力しました");
+            } catch (err) { showSimpleToast("生成に失敗しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        async function autoCompletePersona() {
+            const action = els.input.value.trim(); if (!action) { showSimpleToast("Step 0 で行動を入力してください", 'error'); switchMainTab(0); return; }
+            showLoading(true, "AI Generation...", "ペルソナを自動生成しています");
+            try {
+                const schema = { type: "object", properties: { name: { type: "string" }, age: { type: "integer" }, gender: { type: "string" }, occupation: { type: "string" }, family: { type: "string" }, hobbies: { type: "string" }, personality: { type: "string" }, episode: { type: "string" } } };
+                const prompt = AI_PROMPTS.PERSONA_AUTO_COMPLETE;
+                const pData = await fetchGemini(prompt.user(action), schema, prompt.system);
+
+                els.pName.value = pData.name || ''; els.pAge.value = pData.age || ''; els.pOccupation.value = pData.occupation || ''; els.pHobbies.value = pData.hobbies || ''; els.pPersonality.value = pData.personality || ''; els.pEpisode.value = pData.episode || '';
+                setTimeout(() => { els.pEpisode.style.height = ''; els.pEpisode.style.height = els.pEpisode.scrollHeight + 'px'; }, 10);
+                if (pData.family) { let matched = false; Array.from(els.pFamily.options).forEach(opt => { if (opt.value && pData.family.includes(opt.value)) { els.pFamily.value = opt.value; matched = true; } }); if (!matched && els.pFamily.querySelector(`option[value="その他"]`)) els.pFamily.value = "その他"; }
+                Array.from(els.pGenderRadios).forEach(r => { if (pData.gender && pData.gender.includes(r.value)) r.checked = true; }); showSimpleToast("ペルソナを自動補完しました");
+            } catch (err) { showSimpleToast("ペルソナの生成に失敗しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        async function autoCompleteSettings() {
+            const action = els.input.value.trim(); if (!action) { showSimpleToast("Step 0 で行動を入力してください", 'error'); switchMainTab(0); return; }
+            showLoading(true, "AI Generation...", "詳細設定を自動推論しています");
+            try {
+                const schema = { type: "object", properties: { context: { type: "string" }, flow: { type: "string" }, alternatives: { type: "string" } } };
+                let gender = ""; Array.from(els.pGenderRadios).forEach(r => { if (r.checked) gender = r.value; }); const personaInfo = `ペルソナ: ${els.pName.value}, ${els.pAge.value}歳, ${gender}, ${els.pFamily.value}, 職業:${els.pOccupation.value}, 性格:${els.pPersonality.value}\nエピソード: ${els.pEpisode.value}`;
+
+                const prompt = AI_PROMPTS.SETTINGS_AUTO_COMPLETE;
+                const resData = await fetchGemini(prompt.user(action, personaInfo), schema, prompt.system);
+
+                if (resData.context) els.mContext.value = resData.context; if (resData.flow) els.mFlow.value = resData.flow; if (resData.alternatives) els.mAlts.value = resData.alternatives; showSimpleToast("詳細設定を自動補完しました");
+            } catch (err) { showSimpleToast("詳細設定の生成に失敗しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        // --- Core Analysis ---
+        async function performFullAnalysis(actionText) {
+            showLoading(true, "AI Analyzing...", "深層メカニズムとビジネス機会を解明中...");
+            try {
+                let gender = ""; Array.from(els.pGenderRadios).forEach(r => { if (r.checked) gender = r.value; });
+                const manualInputs = `[前提条件]\n- ペルソナ: ${els.pName.value}, ${els.pAge.value}歳, ${gender}, ${els.pFamily.value}, 職業:${els.pOccupation.value}, 性格:${els.pPersonality.value}\n- エピソード: ${els.pEpisode.value}\n- 指定目的: ${els.mContext.value}\n- 指定フロー: ${els.mFlow.value}\n- 指定代替手段: ${els.mAlts.value}`;
+
+                const prompt = AI_PROMPTS.FULL_ANALYSIS;
+                const resultData = await fetchGemini(prompt.user(actionText, manualInputs), analysisSchema, prompt.system);
+
+                currentAnalysisData = { action: actionText, ...resultData };
+                currentInterviewData = null; // Clear previous interviews
+
+                // 未入力項目の自動補完（フォームへの逆反映）
+                if (resultData.persona) {
+                    const p = resultData.persona;
+                    if (!els.pName.value) els.pName.value = p.name || '';
+                    if (!els.pAge.value) els.pAge.value = p.age || '';
+                    if (!els.pOccupation.value) els.pOccupation.value = p.occupation || '';
+                    if (!els.pHobbies.value) els.pHobbies.value = p.hobbies || '';
+                    if (!els.pPersonality.value) els.pPersonality.value = p.personality || '';
+                    if (!els.pEpisode.value) {
+                        els.pEpisode.value = p.episode || '';
+                        setTimeout(() => { if(els.pEpisode) { els.pEpisode.style.height = ''; els.pEpisode.style.height = els.pEpisode.scrollHeight + 'px'; } }, 10);
+                    }
+                    let genderChecked = Array.from(els.pGenderRadios).some(r => r.checked);
+                    if (!genderChecked && p.gender) {
+                        Array.from(els.pGenderRadios).forEach(r => { if (p.gender.includes(r.value)) r.checked = true; });
+                    }
+                    if (!els.pFamily.value && p.family) {
+                        let matched = false; Array.from(els.pFamily.options).forEach(opt => { if (opt.value && p.family.includes(opt.value)) { els.pFamily.value = opt.value; matched = true; } });
+                        if (!matched && els.pFamily.querySelector(`option[value="その他"]`)) els.pFamily.value = "その他";
+                    }
+                }
+                if (!els.mContext.value && resultData.context) els.mContext.value = resultData.context;
+                
+                // フローと代替手段も、もしUIが空だったら反映
+                if (!els.mFlow.value && resultData.flow) {
+                    els.mFlow.value = ensureArray(resultData.flow).map(s => `- ${s.stepName}: ${s.action}`).join('\n');
+                }
+                if (!els.mAlts.value && resultData.alternativeAnalysis) {
+                    els.mAlts.value = ensureArray(resultData.alternativeAnalysis).map(a => a.alternative).join(', ');
+                }
+
+                renderResults(); switchMainTab(3); showSimpleToast("分析が完了しました（未入力項目をAIが補完しました）");
+            } catch (err) { showSimpleToast("分析処理でエラーが発生しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        // --- Inline Editing & Re-analysis ---
+        function triggerManualReanalyzeBanner() { els.reanalyzeBanner.classList.remove('opacity-0', 'translate-y-32'); }
+        function cancelReanalyzeBanner() { els.reanalyzeBanner.classList.add('opacity-0', 'translate-y-32'); }
+        function handleEdit(key, newValue) { const val = newValue.trim(); if (!val || currentAnalysisData[key] === val) return; currentAnalysisData[key] = val; triggerManualReanalyzeBanner(); }
+        function handleArrayEdit(key, index, newValue) { const val = newValue.trim(); if (!val) { currentAnalysisData[key].splice(index, 1); renderResults(); triggerManualReanalyzeBanner(); return; } if (currentAnalysisData[key][index] === val) return; currentAnalysisData[key][index] = val; triggerManualReanalyzeBanner(); }
+        function handleObjArrayEdit(key, index, prop, newValue) { const val = newValue.trim(); if (currentAnalysisData[key][index][prop] === val) return; currentAnalysisData[key][index][prop] = val; triggerManualReanalyzeBanner(); }
+        function handleFlowObjEdit(index, prop, newValue) { const val = newValue.trim(); if (currentAnalysisData.flow[index][prop] === val) return; currentAnalysisData.flow[index][prop] = val; triggerManualReanalyzeBanner(); }
+        function handleFlowAltEdit(stepIndex, altIndex, newValue) { const val = newValue.trim(); const oldVal = currentAnalysisData.flow[stepIndex].alternatives[altIndex]; if (val === oldVal) return; if (!val) { currentAnalysisData.flow[stepIndex].alternatives.splice(altIndex, 1); } else { currentAnalysisData.flow[stepIndex].alternatives[altIndex] = val; const altAnalysis = ensureArray(currentAnalysisData.alternativeAnalysis).find(a => a.alternative === oldVal); if (altAnalysis) altAnalysis.alternative = val; } triggerManualReanalyzeBanner(); }
+        function addFlowAlt(stepIndex) { const newAltName = "新規代替手段"; ensureArray(currentAnalysisData.flow[stepIndex].alternatives).push(newAltName); ensureArray(currentAnalysisData.alternativeAnalysis).push({ alternative: newAltName, reasonNotChosen: "選ばなかった理由を入力...", painPoint: "生じるペインを入力..." }); renderResults(); triggerManualReanalyzeBanner(); }
+        function addFlowStep(index) { currentAnalysisData.flow.splice(index, 0, { stepName: "新規親フェーズ", action: "行動を入力", alternatives: [], isTargetAction: false }); renderResults(); triggerManualReanalyzeBanner(); }
+        function moveFlowStep(index, direction) { if (index + direction < 0 || index + direction >= currentAnalysisData.flow.length) return; const temp = currentAnalysisData.flow[index]; currentAnalysisData.flow[index] = currentAnalysisData.flow[index + direction]; currentAnalysisData.flow[index + direction] = temp; renderResults(); triggerManualReanalyzeBanner(); }
+        function deleteFlowStep(index) { currentAnalysisData.flow.splice(index, 1); renderResults(); triggerManualReanalyzeBanner(); }
+        function addArrayItem(key) {
+            if (key === 'painPoints') ensureArray(currentAnalysisData.painPoints).push("新しいペインポイントを入力...");
+            if (key === 'alternativeAnalysis') ensureArray(currentAnalysisData.alternativeAnalysis).push({ alternative: "新しい代替手段", reasonNotChosen: "選ばなかった理由...", painPoint: "生じるペイン..." });
+            if (key === 'uxGain') ensureArray(currentAnalysisData.uxGain).push({ targetPain: "解決するペイン...", title: "新しい提案のタイトル", description: "提案の詳細な説明..." });
+            renderResults(); triggerManualReanalyzeBanner();
+        }
+        function handleMechArrayEdit(propName, index, newValue) {
+            const val = newValue.trim();
+            if(!currentAnalysisData.userConditions) currentAnalysisData.userConditions = [];
+            if (!val) { currentAnalysisData.userConditions.splice(index, 1); renderResults(); triggerManualReanalyzeBanner(); return; }
+            if (currentAnalysisData.userConditions[index] === val) return;
+            currentAnalysisData.userConditions[index] = val; triggerManualReanalyzeBanner();
+        }
+        function handleMechObjEdit(propName, newValue) {
+            const val = newValue.trim();
+            if (currentAnalysisData.selectionMechanism === val) return;
+            currentAnalysisData.selectionMechanism = val; triggerManualReanalyzeBanner();
+        }
+        function addMechCondition() {
+            if(!currentAnalysisData.userConditions) currentAnalysisData.userConditions = [];
+            currentAnalysisData.userConditions.push("新しい条件を入力..."); renderResults(); triggerManualReanalyzeBanner();
+        }
+
+        async function reanalyzeBasedOnEdits() {
+            cancelReanalyzeBanner(); showLoading(true, "AI Re-optimizing...", "編集内容に基づき、全体を最適化中...");
+            try {
+                const payloadText = JSON.stringify(currentAnalysisData, null, 2);
+                const prompt = AI_PROMPTS.REANALYZE_ON_EDIT;
+
+                const resultData = await fetchGemini(prompt.user(payloadText), analysisSchema, prompt.system);
+                currentAnalysisData = { action: currentAnalysisData.action, ...resultData }; renderResults(); showSimpleToast("全体が最適化されました", true);
+            } catch (err) { console.error(err); showSimpleToast("再分析エラー", false); } finally { showLoading(false); }
+        }
+
+        // --- ✨ NEW LLM FEATURES ---
+        async function deepDiveUxGain(idx) {
+            const gain = currentAnalysisData.uxGain[idx];
+            showLoading(true, "AI Deep Dive...", `「${gain.title}」を具体化しています`);
+            try {
+                const schema = { type: "object", properties: { catchcopy: { type: "string" }, coreFeatures: { type: "array", items: { type: "string" } }, monetization: { type: "string" } } };
+
+                const prompt = AI_PROMPTS.DEEP_DIVE_UX_GAIN;
+                const resData = await fetchGemini(prompt.user(gain.title, gain.description), schema, prompt.system);
+
+                if (!currentAnalysisData.uxGain[idx].deepDiveData) currentAnalysisData.uxGain[idx].deepDiveData = {};
+                currentAnalysisData.uxGain[idx].deepDiveData = resData;
+                renderResults(); showSimpleToast("UX企画を具体化しました");
+            } catch (err) { showSimpleToast("具体化に失敗しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        async function generateInterviewQuestions() {
+            if (!currentAnalysisData) return;
+            showLoading(true, "AI Generating...", "仮説検証インタビュー質問を生成中...");
+            try {
+                const schema = { type: "array", items: { type: "object", properties: { question: { type: "string", description: "ユーザーに投げかける具体的な質問" }, intent: { type: "string", description: "その質問で何を検証したいかの意図" } } } };
+                const dataString = `ターゲット行動: ${currentAnalysisData.action}\n目的: ${currentAnalysisData.context}\nメカニズム: ${currentAnalysisData.mechanism}\nペインポイント: ${ensureArray(currentAnalysisData.painPoints).join(', ')}`;
+
+                const prompt = AI_PROMPTS.GENERATE_INTERVIEW;
+                const resData = await fetchGemini(prompt.user(dataString), schema, prompt.system);
+
+                currentInterviewData = resData;
+                renderResults(); showSimpleToast("インタビュー質問案を生成しました");
+
+                setTimeout(() => { document.getElementById('main-content-area').scrollTo({ top: document.getElementById('main-content-area').scrollHeight, behavior: 'smooth' }); }, 100);
+            } catch (err) { showSimpleToast("質問案の生成に失敗しました: " + err.message, 'error'); } finally { showLoading(false); }
+        }
+
+        // --- Render Results UI ---
+        function renderResults() {
+            if (!currentAnalysisData) return;
+            const d = currentAnalysisData;
+
+            els.rAction.textContent = d.action || '不明な行動'; els.rContext.textContent = d.context || '目的を入力してください';
+            els.rFlow.innerHTML = ''; const flowArray = ensureArray(d.flow);
+            els.rFlow.insertAdjacentHTML('beforeend', `<div class="flex flex-col items-center justify-center w-8 relative flex-shrink-0 z-0 group no-print"><button onclick="addFlowStep(0)" class="bg-white border border-blue-200 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-blue-50 shadow-sm absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`);
+
+            flowArray.forEach((step, idx) => {
+                if (!step) return;
+                const isTarget = step.isTargetAction === true; const stepName = step.stepName || `親フェーズ ${idx + 1}`; const actionText = step.action || '行動を入力';
+                let arrowHtml = `<div class="flex flex-col items-center justify-center w-12 sm:w-16 relative flex-shrink-0 z-0 text-slate-300 group no-print"><div class="h-[2px] bg-slate-200 w-full absolute top-1/2 -z-10"></div><i data-lucide="chevron-right" class="w-5 h-5 bg-[#f4f6f8] relative z-10 text-slate-400"></i><button onclick="addFlowStep(${idx + 1})" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white border border-blue-200 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-blue-50 shadow-sm"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
+                let altsHtml = ensureArray(step.alternatives).map((alt, altIdx) => `<span class="inline-block bg-white text-slate-500 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded mr-1 mb-1 border border-slate-200 cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors" onclick="swapFlowAction(${idx}, ${altIdx})" title="クリックでメイン行動と入れ替え">${alt}</span>`).join('');
+                altsHtml += `<button onclick="addFlowAlt(${idx})" class="inline-block bg-slate-50 text-blue-500 hover:text-blue-700 hover:bg-blue-50 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded mr-1 mb-1 border border-dashed border-blue-300 transition-colors cursor-pointer no-print"><i data-lucide="plus" class="w-3 h-3 inline"></i></button>`;
+                let moveButtons = `<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-30 no-print"><button onclick="moveFlowStep(${idx}, -1)" class="bg-white border border-slate-200 text-slate-500 rounded-full p-1 hover:bg-slate-50 hover:text-blue-600 shadow-sm ${idx === 0 ? 'invisible' : ''}"><i data-lucide="arrow-left" class="w-3 h-3"></i></button><button onclick="moveFlowStep(${idx}, 1)" class="bg-white border border-slate-200 text-slate-500 rounded-full p-1 hover:bg-slate-50 hover:text-blue-600 shadow-sm ${idx === flowArray.length - 1 ? 'invisible' : ''}"><i data-lucide="arrow-right" class="w-3 h-3"></i></button><button onclick="deleteFlowStep(${idx})" class="bg-white border border-rose-200 text-rose-500 rounded-full p-1 hover:bg-rose-50 shadow-sm"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div>`;
+                const stepHtml = `<div class="flex-shrink-0 w-36 sm:w-44 flex flex-col relative z-10 ${isTarget ? 'transform scale-[1.02] transition-transform my-3' : 'my-3'} group">${moveButtons}<div class="text-[9px] font-bold text-slate-400 mb-1 ml-1 tracking-wider editable w-fit" contenteditable="true" onblur="handleFlowObjEdit(${idx}, 'stepName', this.innerText)">${stepName}</div><div class="relative bg-white border border-slate-200 rounded-xl flex-grow flex flex-col overflow-visible ${isTarget ? 'flow-card-target border-blue-500' : 'shadow-sm'}">${isTarget ? '<div class="absolute top-0 left-0 w-full h-1 bg-blue-500 rounded-t-xl"></div>' : ''}<div class="p-2 sm:p-3 bg-slate-50/50 border-b border-slate-100 flex flex-col gap-1 flex-grow rounded-t-xl"><div class="flex items-center gap-1 text-[8px] font-bold text-blue-400 uppercase tracking-wide"><i data-lucide="layers" class="w-3 h-3"></i> フェーズ</div><div class="text-[13px] sm:text-[15px] font-bold text-slate-800 leading-snug editable" contenteditable="true" onblur="handleFlowObjEdit(${idx}, 'stepName', this.innerText)">${stepName}</div></div><div class="p-2 sm:p-3 flex flex-col gap-1 relative">${isTarget ? '<div class="absolute top-1 right-1 bg-blue-100 text-blue-700 text-[8px] font-bold px-1 py-0.5 rounded uppercase tracking-widest">Target</div>' : ''}<div class="flex items-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-wide"><i data-lucide="zap" class="w-3 h-3"></i> 行動</div><div class="text-[11px] font-medium text-slate-600 editable leading-tight" contenteditable="true" onblur="handleFlowObjEdit(${idx}, 'action', this.innerText)">${actionText}</div><div class="mt-1 pt-1 border-t border-slate-100"><p class="text-[8px] text-slate-400 mb-1">代替 <span class="text-[7px] text-slate-300 no-print">(クリック入替)</span></p><div class="flex flex-wrap items-center">${altsHtml}</div></div></div></div></div>${arrowHtml}`;
+                els.rFlow.insertAdjacentHTML('beforeend', stepHtml);
+            });
+
+            let uConds = [];
+            let sMech = "データを入力してください";
+            if (d.mechanism) {
+                if (typeof d.mechanism === 'string') { uConds = ["(旧バージョンのデータ)"]; sMech = d.mechanism; }
+                else { uConds = d.mechanism.userConditions || []; sMech = d.mechanism.selectionMechanism || ""; }
+            } else {
+                uConds = d.userConditions || []; sMech = d.selectionMechanism || "";
+            }
+
+            const conditionsHtml = ensureArray(uConds).map((cond, idx) => 
+                `<li class="flex items-start gap-2 text-sm text-slate-700 bg-white border border-slate-200 p-2.5 rounded-lg shadow-sm relative group"><i data-lucide="check" class="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0"></i><span class="flex-grow leading-relaxed">${cond}</span></li>`
+            ).join('');
+
+            els.rMech.innerHTML = `
+                <div class="flex flex-col gap-4 w-full">
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <span class="font-bold text-slate-500 text-[10px] uppercase tracking-widest block mb-2"><i data-lucide="list" class="w-3 h-3 inline"></i> ユーザーの求めているもの・条件</span>
+                        <ul class="space-y-2 relative">${conditionsHtml}</ul>
+                    </div>
+                    <div class="bg-blue-50/10 p-4 rounded-xl border border-blue-100 relative">
+                        <span class="font-bold text-blue-600 text-[10px] uppercase tracking-widest block mb-1.5"><i data-lucide="zap" class="w-3 h-3 inline"></i> その行動が選ばれたメカニズム</span>
+                        <p class="text-sm text-slate-800 leading-loose block">${sMech || '入力してください'}</p>
+                    </div>
+                </div>
+            `;
+            els.rPain.innerHTML = ensureArray(d.painPoints).length > 0 ? ensureArray(d.painPoints).map((p, idx) => `<li class="flex items-start gap-3 text-sm text-rose-950 bg-rose-50/70 border border-rose-100/80 p-4 rounded-xl shadow-sm relative group"><i data-lucide="alert-circle" class="w-5 h-5 text-rose-400 mt-0.5 flex-shrink-0"></i><span class="flex-grow editable leading-relaxed tracking-wide" contenteditable="true" onblur="handleArrayEdit('painPoints', ${idx}, this.innerText)">${p}</span></li>`).join('') : '';
+            els.rAlt.innerHTML = ensureArray(d.alternativeAnalysis).length > 0 ? ensureArray(d.alternativeAnalysis).map((alt, idx) => `<div class="bg-white border border-slate-200 p-6 rounded-2xl flex flex-col shadow-sm"><div class="font-extrabold text-slate-800 text-lg mb-4 flex items-center justify-between"><span class="editable border-b-2 border-slate-200 pb-1" contenteditable="true" onblur="handleObjArrayEdit('alternativeAnalysis', ${idx}, 'alternative', this.innerText)">${alt?.alternative || '代替手段名'}</span></div><div class="space-y-4 flex-grow"><div class="bg-slate-50 border border-slate-100 p-4 rounded-xl flex items-start gap-3"><i data-lucide="help-circle" class="w-4 h-4 mt-0.5 text-slate-400 flex-shrink-0"></i><div class="flex-grow"><span class="font-bold text-slate-500 text-[10px] uppercase tracking-widest block mb-1">不採用理由</span><span class="text-slate-700 text-sm leading-relaxed editable block" contenteditable="true" onblur="handleObjArrayEdit('alternativeAnalysis', ${idx}, 'reasonNotChosen', this.innerText)">${alt?.reasonNotChosen || '追記してください'}</span></div></div><div class="bg-amber-50/50 border border-amber-100/50 p-4 rounded-xl flex items-start gap-3"><i data-lucide="corner-down-right" class="w-4 h-4 mt-0.5 text-amber-500 flex-shrink-0"></i><div class="flex-grow"><span class="font-bold text-amber-600 text-[10px] uppercase tracking-widest block mb-1">生じるペイン</span><span class="text-slate-700 text-sm leading-relaxed editable block" contenteditable="true" onblur="handleObjArrayEdit('alternativeAnalysis', ${idx}, 'painPoint', this.innerText)">${alt?.painPoint || '追記してください'}</span></div></div></div></div>`).join('') : '';
+
+            els.rGain.innerHTML = ensureArray(d.uxGain).length > 0 ? ensureArray(d.uxGain).map((gain, idx) => {
+                let deepDiveHtml = '';
+                let buttonHtml = `<button onclick="deepDiveUxGain(${idx})" class="gen-btns mt-5 text-[10px] font-bold text-emerald-700 hover:text-white flex items-center gap-1.5 w-fit px-4 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-500 transition-colors border border-emerald-200 shadow-sm"><i data-lucide="sparkles" class="w-4 h-4"></i> 企画を具体化</button>`;
+
+                if (gain.deepDiveData) {
+                    const dd = gain.deepDiveData;
+                    buttonHtml = '';
+                    deepDiveHtml = `
+                        <div class="mt-5 pt-5 border-t border-emerald-50 space-y-4 text-left">
+                            <div class="bg-emerald-50/50 text-emerald-800 px-4 py-2.5 rounded-xl text-sm font-bold border border-emerald-100/50 flex flex-col gap-0.5"><span class="text-[9px] text-emerald-500 uppercase tracking-widest leading-none">Catchcopy</span>「${dd.catchcopy || ''}」</div>
+                            <div class="grid grid-cols-1 gap-4 text-xs">
+                                <div>
+                                    <div class="text-emerald-700 font-bold mb-1.5 flex items-center gap-1.5 uppercase tracking-wide opacity-70">コア機能</div>
+                                    <ul class="list-disc list-inside text-slate-700 space-y-1 ml-1 marker:text-emerald-400">${ensureArray(dd.coreFeatures).map(f => `<li>${f}</li>`).join('')}</ul>
+                                </div>
+                                <div class="pt-2 border-t border-emerald-50/50">
+                                    <div class="text-emerald-700 font-bold mb-1.5 flex items-center gap-1.5 uppercase tracking-wide opacity-70">ビジネスモデル</div>
+                                    <p class="text-slate-600 leading-relaxed">${dd.monetization || ''}</p>
+                                </div>
+                            </div>
+                        </div>`;
+                }
+
+                return `
+                    <div class="bg-white/80 backdrop-blur-sm border border-emerald-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative flex flex-col h-full group">
+                        ${gain.targetPain ? `<div class="absolute -top-3 left-6 text-[10px] bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold flex items-center gap-1.5 border border-blue-200 shadow-sm"><i data-lucide="target" class="w-3 h-3"></i> 解決: ${gain.targetPain}</div>` : ''}
+                        <div class="flex-grow text-left">
+                            <h4 class="text-lg font-black text-slate-800 mb-3 editable inline-block mt-3" contenteditable="true" onblur="handleObjArrayEdit('uxGain', ${idx}, 'title', this.innerText)">${gain?.title || 'タイトル'}</h4>
+                            <p class="text-slate-600 text-sm leading-relaxed editable block" contenteditable="true" onblur="handleObjArrayEdit('uxGain', ${idx}, 'description', this.innerText)">${gain?.description || '説明を入力'}</p>
+                        </div>
+                        ${deepDiveHtml}${buttonHtml}
+                    </div>`;
+            }).join('') : '';
+
+            if (currentInterviewData && Array.isArray(currentInterviewData)) {
+                els.rInterview.innerHTML = `<div class="grid grid-cols-1 gap-4">` +
+                    currentInterviewData.map((q, i) => `
+                        <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
+                            <div class="flex items-start gap-3">
+                                <div class="bg-blue-50 border border-blue-100 text-blue-600 w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">Q${i + 1}</div>
+                                <div>
+                                    <p class="text-sm font-bold text-slate-800 mb-2 leading-relaxed">${q.question}</p>
+                                    <div class="flex items-start gap-1.5 text-[10px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100"><i data-lucide="target" class="w-3 h-3 flex-shrink-0 mt-0.5 text-blue-400"></i><span class="leading-relaxed">${q.intent}</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('') + `</div>`;
+            }
+
+            lucide.createIcons();
+        }
+
+        // --- Export Functions ---
+        function exportMarkdown() { if (!currentAnalysisData) return; const d = currentAnalysisData; let md = `# UX Insight: ${d.action}\n\n## Final Goal (Context)\n${d.context || 'なし'}\n\n## Flow\n`; ensureArray(d.flow).forEach((s, i) => { const alts = ensureArray(s.alternatives).join(', '); md += `### ${i + 1}. ${s.isTargetAction ? '🎯 ' : ''}${s.stepName}\n- Action: ${s.action}\n` + (alts ? `- Alternatives: ${alts}\n` : ''); }); md += `\n## Mechanism\n`; let uConds = d.userConditions || []; let sMech = d.selectionMechanism || ""; if(d.mechanism) { if (typeof d.mechanism === 'string') { md += d.mechanism + '\n\n'; } else { uConds = d.mechanism.userConditions || []; sMech = d.mechanism.selectionMechanism || ""; md += `### ユーザーの条件\n`; ensureArray(uConds).forEach(c => md += `- ${c}\n`); md += `\n### 選択メカニズム\n${sMech || 'なし'}\n\n`; } } else { md += `### ユーザーの条件\n`; ensureArray(uConds).forEach(c => md += `- ${c}\n`); md += `\n### 選択メカニズム\n${sMech || 'なし'}\n\n`; } md += `## Pain Points\n${ensureArray(d.painPoints).map(p => `- ${p}`).join('\n')}\n\n## Alternative Analysis\n`; ensureArray(d.alternativeAnalysis).forEach(a => { md += `- **${a?.alternative || '不明'}**\n  - 不採用理由: ${a?.reasonNotChosen || 'なし'}\n  - ペイン: ${a?.painPoint || 'なし'}\n`; }); md += `\n## UX Gain\n`; ensureArray(d.uxGain).forEach(g => { md += `### ${g?.title || '無題'}\n解決するペイン: ${g.targetPain || 'なし'}\n${g?.description || 'なし'}\n`; if (g.deepDiveData) { md += `> キャッチコピー: ${g.deepDiveData.catchcopy}\n> コア機能: ${ensureArray(g.deepDiveData.coreFeatures).join(', ')}\n> マネタイズ: ${g.deepDiveData.monetization}\n`; } md += '\n'; }); if (currentInterviewData) { md += `## 仮説検証インタビュー\n`; currentInterviewData.forEach((q, i) => { md += `**Q${i + 1}. ${q.question}**\n(意図: ${q.intent})\n\n`; }); } const ta = document.createElement("textarea"); ta.value = md; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showSimpleToast("Markdownをコピーしました"); }
+
+        // Start
+        function bindAutoReanalyze() {
+            const inputs = [els.pName, els.pAge, els.pOccupation, els.pHobbies, els.pPersonality, els.pEpisode, els.pFamily];
+            inputs.forEach(input => {
+                if (input) input.addEventListener('input', () => { isPersonaChanged = true; });
+            });
+            Array.from(els.pGenderRadios).forEach(r => r.addEventListener('change', () => { isPersonaChanged = true; }));
+            if(els.pFamily) els.pFamily.addEventListener('change', () => { isPersonaChanged = true; });
+        }
+
+        let isPersonaChanged = false;
+        let isReanalyzingBg = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (els.form) els.form.addEventListener('submit', (e) => { e.preventDefault(); nextStep(); });
+            bindAutoReanalyze();
+            initApp();
+        });
+    </script>
+</body>
+
+</html>
