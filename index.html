@@ -213,6 +213,7 @@
                 <span id="api-status-indicator" class="w-2 h-2 rounded-full bg-slate-300 shadow-sm flex-shrink-0"></span>
             </div>
             <input type="password" id="api-key-input" placeholder="Key..."
+                oninput="handleApiKeyInput()"
                 class="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 outline-none mb-2 placeholder:text-slate-300 shadow-sm no-print-collapsed">
             
             <div class="mb-3">
@@ -838,6 +839,27 @@
             switchMainTab(3);
         }
 
+        let typingTimer;
+        function handleApiKeyInput() {
+            clearTimeout(typingTimer);
+            const inputVal = document.getElementById('api-key-input').value.trim();
+            if (inputVal) {
+                apiKey = inputVal;
+                localStorage.setItem('ux_insight_api_key', apiKey);
+                typingTimer = setTimeout(() => {
+                    fetchAvailableModels();
+                }, 800);
+            } else {
+                apiKey = "";
+                localStorage.removeItem('ux_insight_api_key');
+                localStorage.removeItem('ux_insight_selected_model');
+                selectedModel = "";
+                const select = document.getElementById('model-select');
+                if (select) select.innerHTML = '<option value="">APIキー入力後に取得...</option>';
+            }
+            updateApiStatusUI();
+        }
+
         function saveApiKey() {
             const inputVal = document.getElementById('api-key-input').value.trim();
             if (inputVal) {
@@ -860,7 +882,8 @@
             const select = document.getElementById('model-select');
             selectedModel = select.value;
             localStorage.setItem('ux_insight_selected_model', selectedModel);
-            document.getElementById('model-auto-select-msg').classList.add('hidden');
+            const msgEl = document.getElementById('model-auto-select-msg');
+            if (msgEl) msgEl.classList.add('hidden');
             updateModelStatusUI();
         }
 
@@ -905,15 +928,17 @@
                     // 保存されているモデルがあればそれを、なければ最適なもの、それもなければ最初のものを
                     if (!selectedModel || !canGenModels.some(m => m.name.includes(selectedModel))) {
                         selectedModel = foundBest || canGenModels[0].name.replace('models/', '');
-                        document.getElementById('model-auto-select-msg').classList.remove('hidden');
+                        const msgEl = document.getElementById('model-auto-select-msg');
+                        if (msgEl) msgEl.classList.remove('hidden');
                     }
                     select.value = selectedModel;
                     localStorage.setItem('ux_insight_selected_model', selectedModel);
                     updateModelStatusUI();
                 }
             } catch (err) {
-                console.error(err);
-                showSimpleToast("モデル取得失敗: " + err.message, 'error');
+                console.error("モデル判定エラー (非表示):", err);
+                const select = document.getElementById('model-select');
+                if (select) select.innerHTML = '<option value="">判定できませんでした</option>';
             }
         }
 
